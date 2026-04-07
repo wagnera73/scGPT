@@ -1,0 +1,13 @@
+#BSUB -W 10:00 
+#BSUB -n 4 
+#BSUB -M 50000 
+#BSUB -R "span[hosts=1]" 
+#BSUB -o "../logs/%J.out" 
+#BSUB -e "../logs/%J.err"
+#BSUB -q gpu-v100 
+#BSUB -gpu "num=1"  
+module load anaconda3
+conda activate rtd
+module load cuda
+cd /data/xu_lab_projectsx/Andrew/Foundation_Test/scGPT-1/examples/
+python finetune_AML.py
