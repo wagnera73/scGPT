@@ -51,7 +51,7 @@ hyperparameter_defaults = dict(
     do_train=True,
     load_model="../save/scGPT_kidney",
     mask_ratio=0.4,
-    epochs=10,
+    epochs=15,
     n_bins=100,
     GEPC=True,  # Masked value prediction for cell embedding
     ecs_thres=0.8,  # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
@@ -74,7 +74,7 @@ run = wandb.init(
     config=hyperparameter_defaults,
     project="scGPT",
     reinit=True,
-    mode="disabled",
+    #mode="disabled",
     settings=wandb.Settings(start_method="fork"),
 )
 config = wandb.config
@@ -121,6 +121,7 @@ else:
     ori_batch_col = "ID"
     adata.obs["celltype"] = adata.obs["AnnoCellType"].astype("category")
     adata.obs["condition"] = adata.obs["disease"].astype("category")
+    adata.layers["counts"] = adata.raw.X.copy()
     #adata.var = adata.var.set_index("var.features")
     data_is_raw = True
 
@@ -175,7 +176,7 @@ else:
 
 # set up the preprocessor, use the args to config the workflow
 preprocessor = Preprocessor(
-    use_key="X",  # the key in adata.layers to use as raw data
+    use_key="counts",  # the key in adata.layers to use as raw data
     filter_gene_by_counts=3,  # step 1
     filter_cell_by_counts=False,  # step 2
     normalize_total=1e4,  # 3. whether to normalize the raw data and to what sum
@@ -659,6 +660,7 @@ def eval_testdata(
         )
 
         results["batch_umap"] = fig
+        wandb.log({"visuals/umap_batch": wandb.Image(fig)})
 
         sc.pp.neighbors(adata_t, use_rep="X_scGPT")
         sc.tl.umap(adata_t, min_dist=0.3)
@@ -675,6 +677,7 @@ def eval_testdata(
         )
 
         results["celltype_umap"] = fig
+        wandb.log({"visuals/umap_cell": wandb.Image(fig)})
 
     if len(include_types) == 1:
         return results
