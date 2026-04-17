@@ -14,6 +14,7 @@ from anndata import AnnData
 import scanpy as sc
 import scvi
 import numpy as np
+import pandas as pd
 import wandb
 from scipy.sparse import issparse
 import matplotlib.pyplot as plt
@@ -47,12 +48,12 @@ os.environ["KMP_WARNINGS"] = "off"
 
 hyperparameter_defaults = dict(
     seed=42,
-    dataset_name="AML",
+    dataset_name="LAM",
     do_train=True,
-    load_model="../save/scGPT_human",
+    load_model="../save/scGPT_lung",
     mask_ratio=0.4,
     epochs=30,
-    n_bins=20,
+    n_bins=100,
     GEPC=True,  # Masked value prediction for cell embedding
     ecs_thres=0.8,  # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
     dab_weight=1.0,
@@ -72,7 +73,7 @@ hyperparameter_defaults = dict(
 )
 run = wandb.init(
     config=hyperparameter_defaults,
-    project="scGPT",
+    project="scGPT-LAM",
     reinit=True,
     #mode="disabled",
     settings=wandb.Settings(start_method="fork"),
@@ -102,7 +103,7 @@ save_dir.mkdir(parents=True, exist_ok=True)
 print(f"save to {save_dir}")
 # save the whole script to the dir
 
-script_path = os.path.join(os.getcwd(), 'finetune_AML.ipynb')  # Or adjust for your specific case
+script_path = os.path.join(os.getcwd(), 'finetune_lam_treatment.py')  # Or adjust for your specific case
 os.system(f"cp {script_path} {save_dir}")
 #os.system(f"cp {__file__} {save_dir}")
 
@@ -117,10 +118,15 @@ if dataset_name == "PBMC_10K":
     adata.var = adata.var.set_index("gene_symbols")
     data_is_raw = True
 else:
-    adata = sc.read_h5ad("../data/AML_All_Samples.h5ad")
-    ori_batch_col = "ID"
-    adata.obs["celltype"] = adata.obs["AnnoCellType"].astype("category")
-    adata.obs["condition"] = adata.obs["disease"].astype("category")
+    adata = sc.read_h5ad("../data/lam_ctrl_final.h5ad")
+    treat_meta = pd.read_csv("../../Data/LAM_Samples_Rapa_Treatment.csv")
+    treat_map = dict(zip(treat_meta['Rapa'], treat_meta['Treatment']))
+    adata.obs['Rapa_Treat']  = adata.obs['DataID'].map(treat_map)
+    adata = adata[adata.obs['Rapa_Treat'].notna(), :].copy()
+    ori_batch_col = "Technology"
+    adata.obs["celltype"] = adata.obs["celltype_011625"].astype("category")
+    adata.obs["condition"] = adata.obs["Rapa_Treat"].astype("category")
+
     raw_data = adata.raw.X.copy()
     if issparse(raw_data):
         # Only modify the non-zero data points for efficiency
@@ -129,6 +135,14 @@ else:
         raw_data = np.round(raw_data).astype(int)
     adata.layers["counts"] = raw_data
     adata.X = adata.layers["counts"].copy()
+
+    if sum(1 for gene in adata.var_names if gene.startswith("ENSG")) > 0:
+        gene_map_df  = pd.read_csv("../data/Preprocessing/LAM.genes_rds.txt", sep = "\t")
+        adata.var['gene_symbol'] = gene_map_df.loc[adata.var_names, 'symbol'].values
+        if adata.var['gene_symbol'].is_unique:
+            adata.var_names = adata.var['gene_symbol']
+        if '_index' in adata.var.columns:
+            adata.var = adata.var.drop(columns=['_index'])
     #adata.var = adata.var.set_index("var.features")
     data_is_raw = True
 
@@ -183,7 +197,7 @@ else:
 
 # set up the preprocessor, use the args to config the workflow
 preprocessor = Preprocessor(
-    use_key="X",  # the key in adata.layers to use as raw data
+    use_key="counts",  # the key in adata.layers to use as raw data
     filter_gene_by_counts=3,  # step 1
     filter_cell_by_counts=False,  # step 2
     normalize_total=1e4,  # 3. whether to normalize the raw data and to what sum
@@ -655,10 +669,13 @@ def eval_testdata(
             traceback.print_exc()
             logger.error(e)
 
+        # Batch
         
         sc.pp.neighbors(adata_t, use_rep="X_scGPT")
         sc.tl.umap(adata_t, min_dist=0.3)
+
         fig, ax = plt.subplots(figsize=(10, 5))
+
         sc.pl.umap(
             adata_t,
             color=["str_batch"],
@@ -673,15 +690,16 @@ def eval_testdata(
         fig.tight_layout()
         fig.savefig(save_dir / "temp_umap.png", bbox_inches='tight', dpi=300)
 
-
         results["batch_umap"] = fig
         wandb.log({"visuals/umap_batch": wandb.Image(fig)})
 
+        # Celltype
 
-        
         sc.pp.neighbors(adata_t, use_rep="X_scGPT")
         sc.tl.umap(adata_t, min_dist=0.3)
+
         fig, ax = plt.subplots(figsize=(10, 5))
+
         sc.pl.umap(
             adata_t,
             color=["celltype"],
@@ -692,15 +710,40 @@ def eval_testdata(
             return_fig=False,
             show=False,
             ax=ax,
-            legend_loc='on data'
+            legend_loc='right margin'
         )
 
         fig.tight_layout()
         fig.savefig(save_dir / "temp_umap.png", bbox_inches='tight', dpi=300)
 
-
         results["celltype_umap"] = fig
         wandb.log({"visuals/umap_cell": wandb.Image(fig)})
+
+        # Tech
+
+        sc.pp.neighbors(adata_t, use_rep="X_scGPT")
+        sc.tl.umap(adata_t, min_dist=0.3)
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+
+        sc.pl.umap(
+            adata_t,
+            color=["DataID"],
+            title=[
+                f"DataID, avg_bio = {results.get('avg_bio', 0.0):.4f}",
+            ],
+            frameon=False,
+            return_fig=False,
+            show=False,
+            ax=ax,
+            legend_loc='right margin'
+        )
+
+        fig.tight_layout()
+        fig.savefig(save_dir / "temp_umap.png", bbox_inches='tight', dpi=300)
+
+        results["tech_umap"] = fig
+        wandb.log({"visuals/umap_tech": wandb.Image(fig)})
 
     if len(include_types) == 1:
         return results
@@ -769,6 +812,10 @@ for epoch in range(1, config.epochs + 1):
         results["celltype_umap"].savefig(
             save_dir / f"embeddings_celltype_umap[cls]_e{best_model_epoch}.png", dpi=300
         )
+
+        results["tech_umap"].savefig(
+            save_dir / f"embeddings_DataID_umap[cls]_e{best_model_epoch}.png", dpi=300
+        )
         metrics_to_log = {"test/" + k: v for k, v in results.items()}
         metrics_to_log["test/batch_umap"] = wandb.Image(
             str(save_dir / f"embeddings_batch_umap[cls]_e{best_model_epoch}.png"),
@@ -777,6 +824,11 @@ for epoch in range(1, config.epochs + 1):
 
         metrics_to_log["test/celltype_umap"] = wandb.Image(
             str(save_dir / f"embeddings_celltype_umap[cls]_e{best_model_epoch}.png"),
+            caption=f"celltype avg_bio epoch {best_model_epoch}",
+        )
+
+        metrics_to_log["test/tech_umap"] = wandb.Image(
+            str(save_dir / f"embeddings_DataID_umap[cls]_e{best_model_epoch}.png"),
             caption=f"celltype avg_bio epoch {best_model_epoch}",
         )
         metrics_to_log["test/best_model_epoch"] = best_model_epoch
