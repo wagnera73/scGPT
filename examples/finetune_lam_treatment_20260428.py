@@ -53,7 +53,7 @@ hyperparameter_defaults = dict(
     load_model="../save/scGPT_lung",
     mask_ratio=0.4,
     epochs=30,
-    n_bins=20,
+    n_bins=100,
     GEPC=True,  # Masked value prediction for cell embedding
     ecs_thres=0.8,  # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
     dab_weight=1.0,
@@ -123,7 +123,7 @@ else:
     treat_map = dict(zip(treat_meta['Rapa'], treat_meta['Treatment']))
     adata.obs['Rapa_Treat']  = adata.obs['DataID'].map(treat_map)
     adata = adata[adata.obs['Rapa_Treat'].notna(), :].copy()
-    ori_batch_col = "Technology"
+    ori_batch_col = "DataID"
     adata.obs["celltype"] = adata.obs["celltype_011625"].astype("category")
     adata.obs["condition"] = adata.obs["Rapa_Treat"].astype("category")
 
@@ -669,81 +669,37 @@ def eval_testdata(
             traceback.print_exc()
             logger.error(e)
 
-        # Batch
-        
         sc.pp.neighbors(adata_t, use_rep="X_scGPT")
         sc.tl.umap(adata_t, min_dist=0.3)
-
-        fig, ax = plt.subplots(figsize=(10, 5))
-
-        sc.pl.umap(
+        fig = sc.pl.umap(
             adata_t,
             color=["str_batch"],
             title=[f"batch, avg_bio = {results.get('avg_bio', 0.0):.4f}"],
             frameon=False,
-            return_fig=False,
+            return_fig=True,
             show=False,
-            ax=ax,
             legend_loc='right margin'
         )
-
-        fig.tight_layout()
-        fig.savefig(save_dir / "temp_umap.png", bbox_inches='tight', dpi=300)
 
         results["batch_umap"] = fig
         wandb.log({"visuals/umap_batch": wandb.Image(fig)})
 
-        # Celltype
-
         sc.pp.neighbors(adata_t, use_rep="X_scGPT")
         sc.tl.umap(adata_t, min_dist=0.3)
-
-        fig, ax = plt.subplots(figsize=(10, 5))
-
-        sc.pl.umap(
+        fig = sc.pl.umap(
             adata_t,
             color=["celltype"],
             title=[
                 f"celltype, avg_bio = {results.get('avg_bio', 0.0):.4f}",
             ],
             frameon=False,
-            return_fig=False,
+            return_fig=True,
             show=False,
-            ax=ax,
             legend_loc='right margin'
         )
-
-        fig.tight_layout()
-        fig.savefig(save_dir / "temp_umap.png", bbox_inches='tight', dpi=300)
 
         results["celltype_umap"] = fig
         wandb.log({"visuals/umap_cell": wandb.Image(fig)})
-
-        # Tech
-
-        sc.pp.neighbors(adata_t, use_rep="X_scGPT")
-        sc.tl.umap(adata_t, min_dist=0.3)
-
-        fig, ax = plt.subplots(figsize=(10, 5))
-
-        sc.pl.umap(
-            adata_t,
-            color=["DataID"],
-            title=[
-                f"DataID, avg_bio = {results.get('avg_bio', 0.0):.4f}",
-            ],
-            frameon=False,
-            return_fig=False,
-            show=False,
-            ax=ax,
-            legend_loc='right margin'
-        )
-
-        fig.tight_layout()
-        fig.savefig(save_dir / "temp_umap.png", bbox_inches='tight', dpi=300)
-
-        results["tech_umap"] = fig
-        wandb.log({"visuals/umap_tech": wandb.Image(fig)})
 
     if len(include_types) == 1:
         return results
@@ -812,10 +768,6 @@ for epoch in range(1, config.epochs + 1):
         results["celltype_umap"].savefig(
             save_dir / f"embeddings_celltype_umap[cls]_e{best_model_epoch}.png", dpi=300
         )
-
-        results["tech_umap"].savefig(
-            save_dir / f"embeddings_DataID_umap[cls]_e{best_model_epoch}.png", dpi=300
-        )
         metrics_to_log = {"test/" + k: v for k, v in results.items()}
         metrics_to_log["test/batch_umap"] = wandb.Image(
             str(save_dir / f"embeddings_batch_umap[cls]_e{best_model_epoch}.png"),
@@ -826,11 +778,6 @@ for epoch in range(1, config.epochs + 1):
             str(save_dir / f"embeddings_celltype_umap[cls]_e{best_model_epoch}.png"),
             caption=f"celltype avg_bio epoch {best_model_epoch}",
         )
-
-        metrics_to_log["test/tech_umap"] = wandb.Image(
-            str(save_dir / f"embeddings_DataID_umap[cls]_e{best_model_epoch}.png"),
-            caption=f"celltype avg_bio epoch {best_model_epoch}",
-        )
         metrics_to_log["test/best_model_epoch"] = best_model_epoch
         wandb.log(metrics_to_log)
         wandb.log({"avg_bio": results.get("avg_bio", 0.0)})
@@ -839,6 +786,16 @@ for epoch in range(1, config.epochs + 1):
 
 torch.save(best_model.state_dict(), save_dir / "best_model.pt")
 
+if "_index" in adata.raw.var.columns:
+    # 1. Extract the raw data into a standalone AnnData object
+    raw_adata = adata.raw.to_adata()
+    
+    # 2. Rename the offending column in this temporary object
+    raw_adata.var.rename(columns={"_index": "original_index"}, inplace=True)
+    
+    # 3. Assign it back (AnnData handles the conversion to the 'Raw' type)
+    adata.raw = raw_adata
+adata.write_h5ad(save_dir / "finetune_lam_treatment_20260428.h5ad")
 artifact = wandb.Artifact(f"best_model", type="model")
 glob_str = os.path.join(save_dir, "best_model.pt")
 artifact.add_file(glob_str)
