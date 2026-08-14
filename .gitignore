@@ -156,3 +156,5 @@ figures/
 scGPT_human-20251028T160917Z-1-001.zip
 scGPT_kidney-20250916T175940Z-1-001.zip
 scGPT_lung-20250916T165432Z-1-001.zip
+*.bak
+EOF

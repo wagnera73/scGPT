@@ -29,7 +29,7 @@ for p1 in "${param1_vals[@]}"; do
             echo "Parameters -> Param1: $p1 | Param2: $p2 | Param3: $p3"
             echo "----------------------------------------"
 
-            bsub -q gpu-a100 -W 5:00 -n 4 -M 200000 -gpu "num=2" -R "span[hosts=1]" -o "./logs/%J.out" -e "./logs/%J.err" python scripts/main.py \
+            bsub -q gpu-a100 -W 15:00 -n 4 -M 200000 -gpu "num=2" -R "span[hosts=1]" -o "./logs/%J.out" -e "./logs/%J.err" python scripts/main.py \
 			  --dataset_name AML \
 			  --model scGPT \
 			  --task finetune \

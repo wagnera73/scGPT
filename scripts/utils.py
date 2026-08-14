@@ -27,6 +27,24 @@ DATASET_REGISTRY = {
         },
         "batch_column": "ID",
     },
+    "LAM": {
+        "path": REPO_ROOT / "data" / "lam_ctrl_final.h5ad",
+        "label_columns": {
+            "celltype": ["celltype_011625"],
+            "condition": ["condition"],
+            "celltype_condition": ["celltype_011625", "condition"],
+        },
+        "batch_column": "DataID",
+    },
+    "ABCA3": {
+        "path": REPO_ROOT / "data" / ".h5ad",
+        "label_columns": {
+            "celltype": [""],
+            "condition": [""],
+            "celltype_condition": ["", ""],
+        },
+        "batch_column": "orig.ident",
+    },
 }
 
 

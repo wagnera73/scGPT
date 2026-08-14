@@ -86,9 +86,9 @@ def load_default_hyperparameters():
         seed=0,
         do_train=True,
         mask_ratio=0.0,
-        epochs=10,
+        epochs=30,
         n_bins=51,
-        max_seq_len=3001,  # matches tutorials/Tutorial_Annotation.ipynb
+        #max_seq_len=3001,  # matches tutorials/Tutorial_Annotation.ipynb
         balance_classes=False,  # stratified split + inverse-frequency class-weighted loss
         MVC=False,  # Masked value prediction for cell embedding
         ecs_thres=0.0,  # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
