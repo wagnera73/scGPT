@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Compare Runs{% endblock %}
+{% block content %}
+<section class="page-header">
+  <h1>Compare Runs</h1>
+  <p class="muted">{{ selected|length }} run(s) selected.</p>
+</section>
+
+{% if series %}
+<div class="chart-card">
+  <h2>Validation loss by epoch</h2>
+  <svg viewBox="0 0 640 220" class="chart">
+    {% for s in series %}
+    <polyline points="{{ s.points }}" fill="none" stroke="{{ s.color }}" stroke-width="2"/>
+    {% endfor %}
+  </svg>
+  <ul class="legend">
+    {% for s in series %}
+    <li><span class="swatch" style="background:{{ s.color }}"></span> <a href="/run/{{ s.run.run_id }}">{{ s.run.run_id }}</a></li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="table-scroll">
+<table class="runs-table">
+  <thead>
+    <tr>
+      <th>Run</th><th>Dataset</th><th>Label</th><th>Base Model</th><th>Best Epoch</th><th>Best Valid Loss</th>
+      <th>Accuracy</th><th>Precision</th><th>Recall</th><th>Macro F1</th><th>Train / Valid N</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in selected %}
+    <tr>
+      <td><a href="/run/{{ r.run_id }}">{{ r.run_id }}</a></td>
+      <td>{{ r.dataset_name or "—" }}</td>
+      <td>{{ r.label_column or "—" }}</td>
+      <td>{{ r.base_model or "—" }}{% if r.balance_classes %} <span class="muted">(balanced)</span>{% endif %}</td>
+      <td>{{ r.best_epoch if r.best_epoch is not none else "—" }}</td>
+      <td>{{ "%.4f"|format(r.best_valid_loss) if r.best_valid_loss is not none else "—" }}</td>
+      <td>{{ "%.3f"|format(r.final_accuracy) if r.final_accuracy is not none else "—" }}</td>
+      <td>{{ "%.3f"|format(r.final_precision) if r.final_precision is not none else "—" }}</td>
+      <td>{{ "%.3f"|format(r.final_recall) if r.final_recall is not none else "—" }}</td>
+      <td>{{ "%.3f"|format(r.final_macro_f1) if r.final_macro_f1 is not none else "—" }}</td>
+      <td>{{ r.train_samples or "—" }} / {{ r.valid_samples or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">Select two or more runs below (or from the <a href="/">runs list</a>) to compare them.</p>
+{% endif %}
+
+<div class="card">
+<h3>Add or remove runs</h3>
+<form action="/compare" method="get">
+  <ul class="checklist">
+  {% for r in available_runs %}
+    <li>
+      <label>
+        <input type="checkbox" name="runs" value="{{ r.run_id }}" {% if r.run_id in selected_ids %}checked{% endif %}>
+        {{ r.run_id }} <span class="muted">({{ r.status }})</span>
+      </label>
+    </li>
+  {% endfor %}
+  </ul>
+  <button type="submit" class="btn">Update comparison</button>
+</form>
+</div>
+{% endblock %}

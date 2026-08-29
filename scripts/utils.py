@@ -25,7 +25,7 @@ DATASET_REGISTRY = {
             "condition": ["disease"],
             "celltype_condition": ["AnnoCellType", "disease"],
         },
-        "batch_column": "ID",
+        "batch_column": "subject",
     },
     "LAM": {
         "path": REPO_ROOT / "data" / "lam_ctrl_final.h5ad",

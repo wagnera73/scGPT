@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ run.run_id }}{% endblock %}
+{% block content %}
+<section class="page-header">
+  <h1>{{ run.run_id }}</h1>
+  <p>
+    <span class="badge status-{{ run.status }}">{{ run.status }}</span>
+    <span class="muted">updated {{ run.last_modified.strftime("%Y-%m-%d %H:%M:%S") }}</span>
+  </p>
+</section>
+
+<div class="grid">
+  <div class="card">
+    <h3>Setup</h3>
+    <dl>
+      <dt>Dataset</dt><dd>{{ run.dataset_name or "—" }}</dd>
+      <dt>Label column</dt><dd>{{ run.label_column or "—" }}</dd>
+      <dt>Label classes</dt><dd>{{ run.label_classes|join(", ") if run.label_classes else "—" }}</dd>
+      <dt>Device</dt><dd>{{ run.device or "—" }}</dd>
+      <dt>Genes matched</dt>
+      <dd>{% if run.genes_matched is not none %}{{ run.genes_matched }}/{{ run.genes_total }} (vocab {{ run.vocab_size }}){% else %}—{% endif %}</dd>
+      <dt>Train / valid samples</dt><dd>{{ run.train_samples or "—" }} / {{ run.valid_samples or "—" }}</dd>
+      <dt>Feature length</dt><dd>{{ run.feature_length or "—" }}</dd>
+      <dt>Checkpoint saved</dt><dd>{{ "yes" if run.has_model else "no" }}</dd>
+    </dl>
+  </div>
+  <div class="card">
+    <h3>Result</h3>
+    <dl>
+      <dt>Epochs logged</dt><dd>{{ run.epochs|length }}</dd>
+      <dt>Best epoch</dt><dd>{{ run.best_epoch if run.best_epoch is not none else "—" }}</dd>
+      <dt>Best valid loss</dt><dd>{{ "%.4f"|format(run.best_valid_loss) if run.best_valid_loss is not none else "—" }}</dd>
+      <dt>Accuracy</dt><dd>{{ "%.3f"|format(run.final_accuracy) if run.final_accuracy is not none else "—" }}</dd>
+      <dt>Precision</dt><dd>{{ "%.3f"|format(run.final_precision) if run.final_precision is not none else "—" }}</dd>
+      <dt>Recall</dt><dd>{{ "%.3f"|format(run.final_recall) if run.final_recall is not none else "—" }}</dd>
+      <dt>Macro F1</dt><dd>{{ "%.3f"|format(run.final_macro_f1) if run.final_macro_f1 is not none else "—" }}</dd>
+    </dl>
+  </div>
+</div>
+
+{% if run.config %}
+<div class="card">
+  <h3>Configuration</h3>
+  <div class="table-scroll">
+  <table class="runs-table">
+    <thead><tr><th>Key</th><th>Value</th></tr></thead>
+    <tbody>
+      {% for k, v in run.config.items()|sort %}
+      {% if k not in ["dataset_name", "label_column"] %}
+      <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <h3>Configuration</h3>
+  <p class="muted">No <code>config.json</code> found for this run &mdash; it predates config capture, or the run never got far enough to write it.</p>
+</div>
+{% endif %}
+
+{% if loss_chart.valid %}
+<div class="chart-card">
+  <h2>Loss by epoch</h2>
+  <svg viewBox="0 0 640 220" class="chart">
+    <polyline points="{{ loss_chart.valid }}" fill="none" stroke="#4C72B0" stroke-width="2"/>
+    {% if loss_chart.train %}<polyline points="{{ loss_chart.train }}" fill="none" stroke="#DD8452" stroke-width="2" stroke-dasharray="4 3"/>{% endif %}
+  </svg>
+  <p class="muted">
+    range {{ "%.4f"|format(loss_range[0]) }} &ndash; {{ "%.4f"|format(loss_range[1]) }}
+    &middot; <span class="swatch" style="background:#4C72B0"></span> valid
+    {% if loss_chart.train %}&middot; <span class="swatch" style="background:#DD8452"></span> train{% endif %}
+  </p>
+</div>
+{% endif %}
+
+{% if err_chart.valid %}
+<div class="chart-card">
+  <h2>Error rate by epoch</h2>
+  <svg viewBox="0 0 640 220" class="chart">
+    <polyline points="{{ err_chart.valid }}" fill="none" stroke="#55A868" stroke-width="2"/>
+    {% if err_chart.train %}<polyline points="{{ err_chart.train }}" fill="none" stroke="#C44E52" stroke-width="2" stroke-dasharray="4 3"/>{% endif %}
+  </svg>
+  <p class="muted">
+    range {{ "%.4f"|format(err_range[0]) }} &ndash; {{ "%.4f"|format(err_range[1]) }}
+    &middot; <span class="swatch" style="background:#55A868"></span> valid
+    {% if err_chart.train %}&middot; <span class="swatch" style="background:#C44E52"></span> train{% endif %}
+  </p>
+</div>
+{% endif %}
+
+{% if run.epochs %}
+<div class="card">
+  <h3>Per-epoch metrics</h3>
+  <div class="table-scroll">
+  <table class="runs-table">
+    <thead><tr><th>Epoch</th><th>Time (s)</th><th>Valid loss</th><th>Valid err</th><th>Train loss (avg)</th><th>Train err (avg)</th><th>Best</th></tr></thead>
+    <tbody>
+      {% for e in run.epochs %}
+      <tr class="{{ 'best-row' if e.is_best else '' }}">
+        <td>{{ e.epoch }}</td>
+        <td>{{ "%.1f"|format(e.time_s) }}</td>
+        <td>{{ "%.4f"|format(e.valid_loss) }}</td>
+        <td>{{ "%.4f"|format(e.valid_err) }}</td>
+        <td>{{ "%.4f"|format(e.train_loss) if e.train_loss is not none else "—" }}</td>
+        <td>{{ "%.4f"|format(e.train_err) if e.train_err is not none else "—" }}</td>
+        <td>{{ "★" if e.is_best else "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h3>Log tail <span class="muted">(last 200 lines)</span></h3>
+  <pre class="log-tail">{{ log_tail }}</pre>
+</div>
+
+<p><a href="/compare?runs={{ run.run_id }}">Add to comparison &rarr;</a></p>
+{% endblock %}

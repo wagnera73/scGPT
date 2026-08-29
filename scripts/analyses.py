@@ -88,6 +88,7 @@ def load_default_hyperparameters():
         mask_ratio=0.0,
         epochs=30,
         n_bins=51,
+        n_hvg=1200,  # number of highly variable genes
         #max_seq_len=3001,  # matches tutorials/Tutorial_Annotation.ipynb
         balance_classes=False,  # stratified split + inverse-frequency class-weighted loss
         MVC=False,  # Masked value prediction for cell embedding
@@ -160,6 +161,9 @@ def run_finetune(config):
     adata, label_obs_col, batch_column = load_dataset(config.dataset_name, config.label_column)
     config.update({"batch_column": batch_column})
 
+    with open(save_dir / "config.json", "w") as f:
+        json.dump(dict(config), f, indent=2, default=str)
+
     if config.load_model is not None:
         model_dir = Path(config.load_model)
         vocab_file = model_dir / "vocab.json"
@@ -183,6 +187,7 @@ def run_finetune(config):
         vocab = Vocab(VocabPybind(genes + special_tokens, None))
     vocab.set_default_index(vocab[pad_token])
 
+
     preprocessor = Preprocessor(
         use_key="X",
         filter_gene_by_counts=3,
@@ -191,7 +196,7 @@ def run_finetune(config):
         result_normed_key="X_normed",
         log1p=True,
         result_log1p_key="X_log1p",
-        subset_hvg=False,
+        subset_hvg=config.n_hvg,
         hvg_flavor="seurat_v3",
         binning=config.n_bins,
         result_binned_key="X_binned",
@@ -210,7 +215,9 @@ def run_finetune(config):
     # batch up to this cap, and standard (non flash-attn) attention is
     # O(seq_len^2) in memory, so leaving this uncapped causes CUDA OOM on
     # datasets with many genes matched to the vocab.
-    max_seq_len = min(len(genes) + 1, config.max_seq_len)
+    #max_seq_len = min(len(genes) + 1, config.max_seq_len)
+    max_seq_len = config.n_hvg + 1
+
 
     celltype_id_labels = adata.obs["celltype"].astype("category").cat.codes.values
     id2type = dict(enumerate(adata.obs["celltype"].astype("category").cat.categories))

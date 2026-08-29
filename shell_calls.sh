@@ -21,3 +21,13 @@ python scripts/main.py \
   --task finetune \
   --load_model save/scGPT_human \
   --project scGPT-AML-celltype-smoketest
+
+
+
+
+# Fast API test
+conda --name rtd_web --clone rtd
+conda activate rtd_web
+
+pip install -r webapp/requirements.txt
+python -m uvicorn webapp.app:app --reload --port 8000
