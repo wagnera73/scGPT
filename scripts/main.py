@@ -5,9 +5,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-import wandb
-
 from scripts.analyses import load_default_hyperparameters, run_batch, run_finetune, run_perturbation
+from scripts.utils import Config
 
 
 def get_args():
@@ -34,14 +33,7 @@ if __name__ == "__main__":
 
     hyperparameter_defaults = load_default_hyperparameters()[args.task]
     hyperparameter_defaults.update(vars(args))
-
-    run = wandb.init(
-        config=hyperparameter_defaults,
-        project=args.project or "scGPT",
-        reinit=True,
-        settings=wandb.Settings(start_method="fork"),
-    )
-    config = wandb.config
+    config = Config(hyperparameter_defaults)
     print(config)
 
     if config.model == "scGPT":
@@ -57,6 +49,3 @@ if __name__ == "__main__":
             run_perturbation(config)
         elif config.task == "finetune":
             run_finetune(config)
-
-    run.finish()
-    wandb.finish()

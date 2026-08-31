@@ -8,7 +8,6 @@ from typing import Dict, Tuple
 
 import numpy as np
 import torch
-import wandb
 from scipy.sparse import issparse
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
@@ -87,7 +86,7 @@ def load_default_hyperparameters():
         seed=0,
         do_train=True,
         mask_ratio=0.0,
-        epochs=30,
+        epochs=5,
         n_bins=51,
         n_hvg=1200,  # number of highly variable genes
         #max_seq_len=3001,  # matches tutorials/Tutorial_Annotation.ipynb
@@ -334,7 +333,6 @@ def run_finetune(config):
     # Load the pre-trained scGPT model with a classification head
     # ------------------------------------------------------------------
     model, vocab = load_model(config, vocab, num_types, num_batch_types, device)
-    wandb.watch(model)
 
     if config.balance_classes:
         # Inverse-frequency weights (sklearn's "balanced" scheme) computed
@@ -377,9 +375,7 @@ def run_finetune(config):
                     MVC=config.MVC,
                     ECS=config.ecs_thres > 0,
                 )
-                loss = loss_cls = criterion_cls(
-                    output_dict["cls_output"], celltype_labels
-                )
+                loss = criterion_cls(output_dict["cls_output"], celltype_labels)
                 error_rate = 1 - (
                     (output_dict["cls_output"].argmax(1) == celltype_labels)
                     .sum()
@@ -404,8 +400,6 @@ def run_finetune(config):
             scaler.step(optimizer)
             scaler.update()
 
-            wandb.log({"train/cls": loss_cls.item(), "train/err": error_rate})
-
             total_loss += loss.item()
             total_error += error_rate
             if batch % log_interval == 0 and batch > 0:
@@ -423,7 +417,6 @@ def run_finetune(config):
     def evaluate(
         model: nn.Module,
         loader: DataLoader,
-        epoch: int,
         return_raw: bool = False,
         collect_extra: bool = False,
     ):
@@ -469,14 +462,6 @@ def run_finetune(config):
                     cell_embs.append(output_dict["cell_emb"].float().cpu().numpy())
                     true_labels_list.append(celltype_labels.cpu().numpy())
 
-        wandb.log(
-            {
-                "valid/loss": total_loss / total_num,
-                "valid/err": total_error / total_num,
-                "epoch": epoch,
-            }
-        )
-
         if collect_extra:
             return {
                 "predictions": np.concatenate(predictions, axis=0),
@@ -496,7 +481,7 @@ def run_finetune(config):
     base_valid_loader = prepare_dataloader(
         prepare_data()[1], config.batch_size, shuffle=False
     )
-    base_eval = evaluate(model, base_valid_loader, epoch=0, collect_extra=True)
+    base_eval = evaluate(model, base_valid_loader, collect_extra=True)
 
     # ------------------------------------------------------------------
     # Finetune scGPT with the CLS classification objective
@@ -513,7 +498,7 @@ def run_finetune(config):
 
         if config.do_train:
             train_one_epoch(model, train_loader, epoch)
-        val_loss, val_err = evaluate(model, valid_loader, epoch=epoch)
+        val_loss, val_err = evaluate(model, valid_loader)
         elapsed = time.time() - epoch_start_time
         logger.info("-" * 89)
         logger.info(
@@ -535,7 +520,7 @@ def run_finetune(config):
     # ------------------------------------------------------------------
     valid_data_pt = prepare_data()[1]
     valid_loader = prepare_dataloader(valid_data_pt, config.batch_size, shuffle=False)
-    final_eval = evaluate(best_model, valid_loader, epoch=config.epochs, collect_extra=True)
+    final_eval = evaluate(best_model, valid_loader, collect_extra=True)
     predictions = final_eval["predictions"]
     valid_labels = final_eval["true_labels"]
 
@@ -558,7 +543,6 @@ def run_finetune(config):
         f"Recall: {results['test/recall']:.3f}, "
         f"Macro F1: {results['test/macro_f1']:.3f}"
     )
-    wandb.log(results)
 
     torch.save(best_model.state_dict(), save_dir / "best_model.pt")
     vocab.save_json(save_dir / "vocab.json")
@@ -579,13 +563,9 @@ def run_finetune(config):
         )
     except Exception:
         # Diagnostic plots are a nice-to-have on top of an already-saved
-        # checkpoint + wandb log; a plotting bug shouldn't take down an
-        # otherwise-successful (and expensive) training run.
+        # checkpoint; a plotting bug shouldn't take down an otherwise-
+        # successful (and expensive) training run.
         logger.exception("Failed to generate diagnostic plots; continuing.")
-
-    artifact = wandb.Artifact("best_model", type="model")
-    artifact.add_file(str(save_dir / "best_model.pt"))
-    wandb.log_artifact(artifact)
 
     gc.collect()
     return results

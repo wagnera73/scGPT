@@ -13,6 +13,23 @@ from scgpt.utils import load_pretrained
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+
+class Config(dict):
+    """Dict with attribute access, e.g. config.epochs as well as
+    config["epochs"]. Drop-in replacement for wandb.config now that the
+    pipeline no longer depends on wandb: still supports dict(config) for
+    JSON dumps and config.update(...) for merging in extra keys."""
+
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError as exc:
+            raise AttributeError(key) from exc
+
+    def __setattr__(self, key, value):
+        self[key] = value
+
+
 # Maps a dataset name to where its h5ad lives and which obs columns hold
 # which kind of per-cell metadata label. Each label_columns entry is a list
 # of obs columns; a single column is used as-is, multiple columns are
