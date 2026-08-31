@@ -1,6 +1,6 @@
 conda activate rtd
 module load cuda/12.2
-
+sh quick_submit.sh
 
 python -c "import torch; print(torch.__version__, torch.version.cuda)"
 nvidia-smi   # confirm it reports an A100 and the driver's CUDA version
@@ -24,10 +24,10 @@ python scripts/main.py \
 
 
 
+bsub -q gpu-a100 -W 15:00 -n 4 -M 200000 -gpu "num=2" -R "span[hosts=1]" -o "./logs/%J.out" -e "./logs/%J.err" sh test.sh
+
+
 
 # Fast API test
-conda --name rtd_web --clone rtd
-conda activate rtd_web
-
 pip install -r webapp/requirements.txt
 python -m uvicorn webapp.app:app --reload --port 8000

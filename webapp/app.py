@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -134,6 +134,10 @@ def run_detail(request: Request, run_id: str):
     log_text = (run.path / "run.log").read_text(encoding="utf-8", errors="replace")
     log_tail = "\n".join(log_text.splitlines()[-200:])
 
+    plot_sections: Dict[str, List[Dict[str, str]]] = {}
+    for p in run.plots:
+        plot_sections.setdefault(p["section"], []).append(p)
+
     return templates.TemplateResponse(
         request,
         "run_detail.html",
@@ -144,8 +148,25 @@ def run_detail(request: Request, run_id: str):
             "loss_range": loss_range,
             "err_range": err_range,
             "log_tail": log_tail,
+            "plot_sections": plot_sections,
         },
     )
+
+
+@app.get("/run/{run_id}/plots/{filename}")
+def run_plot_file(run_id: str, filename: str):
+    runs_by_id = {r.run_id: r for r in get_runs()}
+    run = runs_by_id.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # Guard against path traversal: only ever serve a bare filename that's
+    # actually listed in this run's own plot manifest.
+    safe_name = Path(filename).name
+    if safe_name != filename or not any(p["filename"] == safe_name for p in run.plots):
+        raise HTTPException(status_code=404, detail="Plot not found")
+
+    return FileResponse(run.path / "plots" / safe_name)
 
 
 @app.get("/compare", response_class=HTMLResponse)

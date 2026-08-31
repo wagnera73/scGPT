@@ -61,6 +61,27 @@
 </div>
 {% endif %}
 
+{% for section, plots in plot_sections.items() %}
+<div class="card">
+  <h3>{{ section }}</h3>
+  <div class="plot-gallery">
+    {% for p in plots %}
+    <figure>
+      <a href="/run/{{ run.run_id }}/plots/{{ p.filename }}" target="_blank">
+        <img src="/run/{{ run.run_id }}/plots/{{ p.filename }}" alt="{{ p.title }}" loading="lazy">
+      </a>
+      <figcaption>{{ p.title }}</figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <h3>Diagnostic plots</h3>
+  <p class="muted">No plots found for this run &mdash; it predates plot generation, or the run never got far enough to write them.</p>
+</div>
+{% endfor %}
+
 {% if loss_chart.valid %}
 <div class="chart-card">
   <h2>Loss by epoch</h2>

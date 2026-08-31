@@ -24,6 +24,7 @@ from scgpt.tokenizer import random_mask_value, tokenize_and_pad_batch
 from scgpt.tokenizer.gene_tokenizer import GeneVocab
 from scgpt.utils import add_file_handler, set_seed
 
+from scripts.plotting import generate_run_plots
 from scripts.utils import REPO_ROOT, load_dataset, load_model
 
 logger = scg.logger
@@ -225,6 +226,7 @@ def run_finetune(config):
     celltypes_labels = np.array(celltype_id_labels)
 
     batch_ids = np.array(adata.obs["batch_id"].tolist())
+    str_batch_ids = np.array(adata.obs["str_batch"].tolist())
     num_batch_types = len(set(batch_ids))
 
     (
@@ -234,10 +236,13 @@ def run_finetune(config):
         valid_celltype_labels,
         train_batch_labels,
         valid_batch_labels,
+        train_str_batch,
+        valid_str_batch,
     ) = train_test_split(
         all_counts,
         celltypes_labels,
         batch_ids,
+        str_batch_ids,
         test_size=0.1,
         shuffle=True,
         stratify=celltypes_labels if config.balance_classes else None,
@@ -416,11 +421,22 @@ def run_finetune(config):
                 start_time = time.time()
 
     def evaluate(
-        model: nn.Module, loader: DataLoader, return_raw: bool = False
+        model: nn.Module,
+        loader: DataLoader,
+        epoch: int,
+        return_raw: bool = False,
+        collect_extra: bool = False,
     ):
+        """collect_extra=True also gathers per-cell softmax probabilities and
+        CLS cell embeddings (used for the confusion/ROC/UMAP plots below), at
+        the cost of extra memory - so it's only turned on for the one-off
+        base-model and final-best-model passes, not every epoch."""
         model.eval()
         total_loss, total_error, total_num = 0.0, 0.0, 0
         predictions = []
+        probs_list = []
+        cell_embs = []
+        true_labels_list = []
         with torch.no_grad():
             for batch_data in loader:
                 input_gene_ids = batch_data["gene_ids"].to(device)
@@ -446,6 +462,12 @@ def run_finetune(config):
                 total_error += (1 - accuracy / len(input_gene_ids)) * len(input_gene_ids)
                 total_num += len(input_gene_ids)
                 predictions.append(output_values.argmax(1).cpu().numpy())
+                if collect_extra:
+                    probs_list.append(
+                        torch.softmax(output_values.float(), dim=1).cpu().numpy()
+                    )
+                    cell_embs.append(output_dict["cell_emb"].float().cpu().numpy())
+                    true_labels_list.append(celltype_labels.cpu().numpy())
 
         wandb.log(
             {
@@ -455,9 +477,26 @@ def run_finetune(config):
             }
         )
 
+        if collect_extra:
+            return {
+                "predictions": np.concatenate(predictions, axis=0),
+                "probs": np.concatenate(probs_list, axis=0),
+                "cell_emb": np.concatenate(cell_embs, axis=0),
+                "true_labels": np.concatenate(true_labels_list, axis=0),
+            }
         if return_raw:
             return np.concatenate(predictions, axis=0)
         return total_loss / total_num, total_error / total_num
+
+    # ------------------------------------------------------------------
+    # Cell embeddings from the base (pre-finetuning) model, kept aside for
+    # the base-vs-finetuned UMAP comparison plots generated below. Must run
+    # before any training step touches `model`'s weights.
+    # ------------------------------------------------------------------
+    base_valid_loader = prepare_dataloader(
+        prepare_data()[1], config.batch_size, shuffle=False
+    )
+    base_eval = evaluate(model, base_valid_loader, epoch=0, collect_extra=True)
 
     # ------------------------------------------------------------------
     # Finetune scGPT with the CLS classification objective
@@ -474,7 +513,7 @@ def run_finetune(config):
 
         if config.do_train:
             train_one_epoch(model, train_loader, epoch)
-        val_loss, val_err = evaluate(model, valid_loader)
+        val_loss, val_err = evaluate(model, valid_loader, epoch=epoch)
         elapsed = time.time() - epoch_start_time
         logger.info("-" * 89)
         logger.info(
@@ -496,8 +535,9 @@ def run_finetune(config):
     # ------------------------------------------------------------------
     valid_data_pt = prepare_data()[1]
     valid_loader = prepare_dataloader(valid_data_pt, config.batch_size, shuffle=False)
-    predictions = evaluate(best_model, valid_loader, return_raw=True)
-    valid_labels = valid_data_pt["celltype_labels"].numpy()
+    final_eval = evaluate(best_model, valid_loader, epoch=config.epochs, collect_extra=True)
+    predictions = final_eval["predictions"]
+    valid_labels = final_eval["true_labels"]
 
     results = {
         "test/accuracy": accuracy_score(valid_labels, predictions),
@@ -524,6 +564,24 @@ def run_finetune(config):
     vocab.save_json(save_dir / "vocab.json")
     with open(save_dir / "id2type.json", "w") as f:
         json.dump({str(k): v for k, v in id2type.items()}, f)
+
+    try:
+        generate_run_plots(
+            save_dir=save_dir,
+            id2type=id2type,
+            train_celltype_labels=train_celltype_labels,
+            valid_celltype_labels=valid_labels,
+            valid_batch_labels=valid_str_batch,
+            predictions=predictions,
+            probs=final_eval["probs"],
+            base_cell_emb=base_eval["cell_emb"],
+            finetuned_cell_emb=final_eval["cell_emb"],
+        )
+    except Exception:
+        # Diagnostic plots are a nice-to-have on top of an already-saved
+        # checkpoint + wandb log; a plotting bug shouldn't take down an
+        # otherwise-successful (and expensive) training run.
+        logger.exception("Failed to generate diagnostic plots; continuing.")
 
     artifact = wandb.Artifact("best_model", type="model")
     artifact.add_file(str(save_dir / "best_model.pt"))

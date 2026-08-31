@@ -84,6 +84,7 @@ class RunSummary:
     config: Optional[Dict[str, object]]
     base_model: Optional[str]
     balance_classes: Optional[bool]
+    plots: List[Dict[str, str]]
 
 
 def _load_config(run_dir: Path) -> Optional[Dict[str, object]]:
@@ -94,6 +95,25 @@ def _load_config(run_dir: Path) -> Optional[Dict[str, object]]:
         return json.loads(config_path.read_text(encoding="utf-8"))
     except (ValueError, json.JSONDecodeError):
         return None
+
+
+def _load_plots(run_dir: Path) -> List[Dict[str, str]]:
+    manifest_path = run_dir / "plots" / "manifest.json"
+    if not manifest_path.exists():
+        return []
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (ValueError, json.JSONDecodeError):
+        return []
+    # Only keep entries whose image file is actually present, in case a run
+    # crashed partway through plot generation.
+    return [
+        p
+        for p in manifest
+        if isinstance(p, dict)
+        and p.get("filename")
+        and (run_dir / "plots" / p["filename"]).exists()
+    ]
 
 
 def _parse_run_dir_name(name: str):
@@ -200,6 +220,8 @@ def parse_run(run_dir: Path) -> RunSummary:
             base_model = Path(str(load_model_path)).name
         balance_classes = config.get("balance_classes")
 
+    plots = _load_plots(run_dir)
+
     if final_accuracy is not None:
         status = "completed"
     elif epochs:
@@ -237,6 +259,7 @@ def parse_run(run_dir: Path) -> RunSummary:
         config=config,
         base_model=base_model,
         balance_classes=balance_classes,
+        plots=plots,
     )
 
 
