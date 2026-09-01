@@ -3,6 +3,9 @@
 #SBATCH --output=logs/nested_loop.out
 #SBATCH --time=02:00:00
 
+export NUMBA_CACHE_DIR=/scratch/wag9iz/numba
+mkdir -p "$NUMBA_CACHE_DIR"
+
 # Define the values for each of your 3 input fields
 param1_vals=("save/scGPT_human" "save/scGPT_kidney")
 param2_vals=("celltype" "condition" "celltype_condition")
