@@ -86,7 +86,7 @@ def load_default_hyperparameters():
         seed=0,
         do_train=True,
         mask_ratio=0.0,
-        epochs=5,
+        epochs=15,
         n_bins=51,
         n_hvg=1200,  # number of highly variable genes
         #max_seq_len=3001,  # matches tutorials/Tutorial_Annotation.ipynb
