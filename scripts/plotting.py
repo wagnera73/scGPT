@@ -17,6 +17,7 @@ import matplotlib
 matplotlib.use("Agg")  # headless-safe: these run on GPU cluster nodes with no display
 import matplotlib.pyplot as plt
 import numpy as np
+import scanpy as sc
 import scib.metrics as scib_metrics
 import umap
 from anndata import AnnData
@@ -193,10 +194,24 @@ def plot_umap_scatter(
 def compute_scib_scores(
     embedding: np.ndarray, label_names: Sequence[str], batch_names: Sequence[str]
 ) -> Dict[str, float]:
-    """ASW-based scib scores (0-1, higher is better) summarizing what a UMAP
-    built from this embedding is showing: how well cells separate by their
-    true label (bio signal) vs. how well different batches mix together
-    within each label (batch signal - how little batch effect remains)."""
+    """scib integration metrics summarizing what a UMAP built from this
+    embedding is showing.
+
+    Bio signal (0-1, higher is better - true label structure is preserved):
+      - bio_score: average silhouette width (ASW) by true label.
+      - graph_connectivity: how connected each label's cells are in the kNN
+        graph (fragmented clusters score lower).
+      - nmi / ari: agreement between an unsupervised Leiden clustering of
+        the embedding and the true labels.
+
+    Batch signal (how much batch structure remains):
+      - batch_score (0-1, higher is better): ASW of batch within each label
+        - close to 1 means batches are well mixed.
+      - pcr: fraction of embedding variance explained by batch. NOT 0-1
+        "higher is better" like the others - lower means less residual
+        batch structure. Only meaningful compared across embeddings (e.g.
+        base vs. finetuned), not in isolation.
+    """
     adata = AnnData(X=np.zeros((embedding.shape[0], 1), dtype=np.float32))
     adata.obs["label"] = list(label_names)
     adata.obs["label"] = adata.obs["label"].astype("category")
@@ -208,28 +223,77 @@ def compute_scib_scores(
     batch_score = scib_metrics.silhouette_batch(
         adata, batch_key="batch", label_key="label", embed="X_emb", verbose=False
     )
-    return {"bio_score": float(bio_score), "batch_score": float(batch_score)}
+
+    # Shared kNN graph on the embedding, reused by graph_connectivity and by
+    # the Leiden clustering cluster_optimal_resolution sweeps internally to
+    # find the resolution that best matches the true labels (for NMI/ARI).
+    sc.pp.neighbors(adata, use_rep="X_emb")
+    graph_conn = scib_metrics.graph_connectivity(adata, label_key="label")
+    scib_metrics.cluster_optimal_resolution(
+        adata, label_key="label", cluster_key="cluster", verbose=False
+    )
+    nmi_score = scib_metrics.nmi(adata, cluster_key="cluster", label_key="label")
+    ari_score = scib_metrics.ari(adata, cluster_key="cluster", label_key="label")
+
+    n_comps = max(2, min(50, embedding.shape[1] - 1, embedding.shape[0] - 1))
+    pcr_value = scib_metrics.pcr(adata, covariate="batch", embed="X_emb", n_comps=n_comps)
+
+    return {
+        "bio_score": float(bio_score),
+        "batch_score": float(batch_score),
+        "graph_connectivity": float(graph_conn),
+        "nmi": float(nmi_score),
+        "ari": float(ari_score),
+        "pcr": float(pcr_value),
+    }
+
+
+_SCIB_HIGHER_BETTER_METRICS = [
+    ("bio_score", "Bio ASW"),
+    ("batch_score", "Batch ASW\n(mixing)"),
+    ("graph_connectivity", "Graph\nconnectivity"),
+    ("nmi", "NMI"),
+    ("ari", "ARI"),
+]
 
 
 def plot_scib_scores(scores: Dict[str, Dict[str, float]], out_path: Path) -> None:
     stages = list(scores.keys())
-    bio = [scores[s]["bio_score"] for s in stages]
-    batch = [scores[s]["batch_score"] for s in stages]
+    metric_keys = [k for k, _ in _SCIB_HIGHER_BETTER_METRICS]
+    metric_labels = [label for _, label in _SCIB_HIGHER_BETTER_METRICS]
+    x = np.arange(len(metric_keys))
+    width = 0.8 / len(stages)
+    fig, ax = plt.subplots(figsize=(9, 5))
+    for i, stage in enumerate(stages):
+        values = [scores[stage][k] for k in metric_keys]
+        offset = (i - (len(stages) - 1) / 2) * width
+        ax.bar(x + offset, values, width, label=stage)
+        for xi, v in zip(x + offset, values):
+            ax.text(xi, v + 0.02, f"{v:.2f}", ha="center", fontsize=7)
+    ax.set_xticks(x)
+    ax.set_xticklabels(metric_labels)
+    ax.set_ylim(0, 1.15)
+    ax.set_ylabel("scib score (0-1, higher is better)")
+    ax.set_title("scib integration metrics")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+
+def plot_pcr_scores(scores: Dict[str, Dict[str, float]], out_path: Path) -> None:
+    stages = list(scores.keys())
+    values = [scores[s]["pcr"] for s in stages]
     x = np.arange(len(stages))
-    width = 0.35
-    fig, ax = plt.subplots(figsize=(5.5, 4.5))
-    ax.bar(x - width / 2, bio, width, label="Bio signal (label ASW)")
-    ax.bar(x + width / 2, batch, width, label="Batch signal (batch ASW, mixing)")
-    for i, v in enumerate(bio):
-        ax.text(i - width / 2, v + 0.02, f"{v:.2f}", ha="center", fontsize=8)
-    for i, v in enumerate(batch):
-        ax.text(i + width / 2, v + 0.02, f"{v:.2f}", ha="center", fontsize=8)
+    fig, ax = plt.subplots(figsize=(4.5, 4.5))
+    ax.bar(x, values, width=0.5, color="#C44E52")
+    pad = max(values) * 0.03 if max(values) > 0 else 0.001
+    for xi, v in zip(x, values):
+        ax.text(xi, v + pad, f"{v:.3f}", ha="center", fontsize=8)
     ax.set_xticks(x)
     ax.set_xticklabels(stages)
-    ax.set_ylim(0, 1.1)
-    ax.set_ylabel("scib score (0-1, higher is better)")
-    ax.set_title("scib bio vs. batch signal")
-    ax.legend()
+    ax.set_ylabel("Variance explained by batch (PCR)")
+    ax.set_title("Batch-explained variance (PCR) — lower is better")
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
@@ -346,7 +410,13 @@ def generate_run_plots(
     plot_scib_scores(scib_scores, plots_dir / "scib_scores.png")
     add(
         "scib_scores.png",
-        "scib bio vs. batch signal (base vs. finetuned)",
+        "scib integration metrics (base vs. finetuned)",
+        "Embeddings",
+    )
+    plot_pcr_scores(scib_scores, plots_dir / "scib_pcr.png")
+    add(
+        "scib_pcr.png",
+        "scib PCR: batch-explained variance (base vs. finetuned)",
         "Embeddings",
     )
     with open(plots_dir / "scib_metrics.json", "w") as f:

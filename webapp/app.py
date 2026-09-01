@@ -38,6 +38,7 @@ SORT_KEYS = {
     "label": lambda r: r.label_column or "",
     "status": lambda r: r.status,
     "base_model": lambda r: r.base_model or "",
+    "project": lambda r: r.project or "",
     "accuracy": lambda r: r.final_accuracy if r.final_accuracy is not None else -1,
     "macro_f1": lambda r: r.final_macro_f1 if r.final_macro_f1 is not None else -1,
     "best_loss": lambda r: (
@@ -60,12 +61,14 @@ def index(
     label: Optional[str] = None,
     status: Optional[str] = None,
     base_model: Optional[str] = None,
+    project: Optional[str] = None,
 ):
     all_runs = get_runs()
     datasets = sorted({r.dataset_name for r in all_runs if r.dataset_name})
     labels = sorted({r.label_column for r in all_runs if r.label_column})
     statuses = sorted({r.status for r in all_runs})
     base_models = sorted({r.base_model for r in all_runs if r.base_model})
+    projects = sorted({r.project for r in all_runs if r.project})
 
     runs = all_runs
     if dataset:
@@ -76,6 +79,8 @@ def index(
         runs = [r for r in runs if r.status == status]
     if base_model:
         runs = [r for r in runs if r.base_model == base_model]
+    if project:
+        runs = [r for r in runs if r.project == project]
 
     key_fn = SORT_KEYS.get(sort, SORT_KEYS["modified"])
     runs = sorted(runs, key=key_fn, reverse=(order != "asc"))
@@ -92,10 +97,12 @@ def index(
             "label": label,
             "status": status,
             "base_model": base_model,
+            "project": project,
             "datasets": datasets,
             "labels": labels,
             "statuses": statuses,
             "base_models": base_models,
+            "projects": projects,
         },
     )
 

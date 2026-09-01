@@ -84,6 +84,7 @@ class RunSummary:
     config: Optional[Dict[str, object]]
     base_model: Optional[str]
     balance_classes: Optional[bool]
+    project: Optional[str]
     plots: List[Dict[str, str]]
 
 
@@ -214,11 +215,13 @@ def parse_run(run_dir: Path) -> RunSummary:
     config = _load_config(run_dir)
     base_model = None
     balance_classes = None
+    project = None
     if config is not None:
         load_model_path = config.get("load_model")
         if load_model_path:
             base_model = Path(str(load_model_path)).name
         balance_classes = config.get("balance_classes")
+        project = config.get("project")
 
     plots = _load_plots(run_dir)
 
@@ -259,6 +262,7 @@ def parse_run(run_dir: Path) -> RunSummary:
         config=config,
         base_model=base_model,
         balance_classes=balance_classes,
+        project=project,
         plots=plots,
     )
 

@@ -39,6 +39,14 @@
       {% endfor %}
     </select>
   </label>
+  <label>Project
+    <select name="project" onchange="this.form.submit()">
+      <option value="">All</option>
+      {% for p in projects %}
+      <option value="{{ p }}" {% if p == project %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </label>
   <input type="hidden" name="sort" value="{{ sort }}">
   <input type="hidden" name="order" value="{{ order }}">
 </form>
@@ -49,9 +57,9 @@
   <thead>
     <tr>
       <th></th>
-      {% for key, label_txt in [("name","Run"), ("dataset","Dataset"), ("label","Label"), ("base_model","Base Model"), ("status","Status"), ("accuracy","Accuracy"), ("macro_f1","Macro F1"), ("best_loss","Best Valid Loss"), ("modified","Updated")] %}
+      {% for key, label_txt in [("name","Run"), ("dataset","Dataset"), ("label","Label"), ("base_model","Base Model"), ("project","Project"), ("status","Status"), ("accuracy","Accuracy"), ("macro_f1","Macro F1"), ("best_loss","Best Valid Loss"), ("modified","Updated")] %}
       <th>
-        <a href="?sort={{ key }}&order={% if sort == key and order != 'asc' %}asc{% else %}desc{% endif %}{% if dataset %}&dataset={{ dataset }}{% endif %}{% if label %}&label={{ label }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if base_model %}&base_model={{ base_model }}{% endif %}">
+        <a href="?sort={{ key }}&order={% if sort == key and order != 'asc' %}asc{% else %}desc{% endif %}{% if dataset %}&dataset={{ dataset }}{% endif %}{% if label %}&label={{ label }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if base_model %}&base_model={{ base_model }}{% endif %}{% if project %}&project={{ project }}{% endif %}">
           {{ label_txt }}{% if sort == key %} {{ '▲' if order == 'asc' else '▼' }}{% endif %}
         </a>
       </th>
@@ -66,6 +74,7 @@
       <td>{{ r.dataset_name or "—" }}</td>
       <td>{{ r.label_column or "—" }}</td>
       <td>{{ r.base_model or "—" }}{% if r.balance_classes %} <span class="muted">(balanced)</span>{% endif %}</td>
+      <td>{{ r.project or "—" }}</td>
       <td><span class="badge status-{{ r.status }}">{{ r.status }}</span></td>
       <td>{{ "%.3f"|format(r.final_accuracy) if r.final_accuracy is not none else "—" }}</td>
       <td>{{ "%.3f"|format(r.final_macro_f1) if r.final_macro_f1 is not none else "—" }}</td>
@@ -73,7 +82,7 @@
       <td title="{{ r.last_modified }}">{{ r.last_modified.strftime("%Y-%m-%d %H:%M") }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="10" class="muted">No runs found under {{ runs_dir }}.</td></tr>
+    <tr><td colspan="11" class="muted">No runs found under {{ runs_dir }}.</td></tr>
     {% endfor %}
   </tbody>
 </table>

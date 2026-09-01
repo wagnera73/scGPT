@@ -25,7 +25,7 @@
 <table class="runs-table">
   <thead>
     <tr>
-      <th>Run</th><th>Dataset</th><th>Label</th><th>Base Model</th><th>Best Epoch</th><th>Best Valid Loss</th>
+      <th>Run</th><th>Dataset</th><th>Label</th><th>Base Model</th><th>Project</th><th>Best Epoch</th><th>Best Valid Loss</th>
       <th>Accuracy</th><th>Precision</th><th>Recall</th><th>Macro F1</th><th>Train / Valid N</th>
     </tr>
   </thead>
@@ -36,6 +36,7 @@
       <td>{{ r.dataset_name or "—" }}</td>
       <td>{{ r.label_column or "—" }}</td>
       <td>{{ r.base_model or "—" }}{% if r.balance_classes %} <span class="muted">(balanced)</span>{% endif %}</td>
+      <td>{{ r.project or "—" }}</td>
       <td>{{ r.best_epoch if r.best_epoch is not none else "—" }}</td>
       <td>{{ "%.4f"|format(r.best_valid_loss) if r.best_valid_loss is not none else "—" }}</td>
       <td>{{ "%.3f"|format(r.final_accuracy) if r.final_accuracy is not none else "—" }}</td>
