@@ -37,7 +37,7 @@ for p1 in "${param1_vals[@]}"; do
 			  --model scGPT \
 			  --task finetune \
 			  --load_model $p1 \
-			  --project scGPT-AML-celltype \
+			  --project scGPT-AML-subject \
 			  --label_column $p2 \
 			  $balance_flag
 
