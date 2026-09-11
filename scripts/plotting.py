@@ -9,6 +9,7 @@ and its matplotlib/umap imports - stay out of the main training logic.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Sequence
 
@@ -46,7 +47,7 @@ def plot_confusion_matrix(
 ) -> None:
     cm = confusion_matrix(y_true, y_pred, labels=range(len(class_names)))
     n = len(class_names)
-    fig, ax = plt.subplots(figsize=(max(4.5, 1.1 * n + 2), max(4, 1.1 * n + 1.5)))
+    fig, ax = plt.subplots(figsize=(max(6.0, 1.4 * n + 2), max(5.5, 1.4 * n + 1.5)))
     im = ax.imshow(cm, cmap="Blues")
     ax.set_xticks(range(n))
     ax.set_yticks(range(n))
@@ -69,7 +70,7 @@ def plot_confusion_matrix(
             )
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=170)
     plt.close(fig)
 
 
@@ -81,7 +82,7 @@ def plot_per_class_metrics(
     )
     x = np.arange(len(class_names))
     width = 0.25
-    fig, ax = plt.subplots(figsize=(max(6.0, 1.0 * len(class_names)), 4.5))
+    fig, ax = plt.subplots(figsize=(max(7.5, 1.3 * len(class_names)), 5.5))
     ax.bar(x - width, precision, width, label="Precision")
     ax.bar(x, recall, width, label="Recall")
     ax.bar(x + width, f1, width, label="F1")
@@ -90,9 +91,9 @@ def plot_per_class_metrics(
     ax.set_ylim(0, 1.05)
     ax.set_ylabel("Score")
     ax.set_title("Per-class precision / recall / F1 (validation set)")
-    ax.legend()
+    ax.legend(fontsize=10)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=170)
     plt.close(fig)
 
 
@@ -107,16 +108,16 @@ def plot_class_distribution(
     valid_counts = np.bincount(valid_labels, minlength=n)[:n]
     x = np.arange(n)
     width = 0.35
-    fig, ax = plt.subplots(figsize=(max(6.0, 1.0 * n), 4.5))
+    fig, ax = plt.subplots(figsize=(max(7.5, 1.3 * n), 5.5))
     ax.bar(x - width / 2, train_counts, width, label="Train")
     ax.bar(x + width / 2, valid_counts, width, label="Valid")
     ax.set_xticks(x)
     ax.set_xticklabels(class_names, rotation=45, ha="right")
     ax.set_ylabel("Number of cells")
     ax.set_title("Class distribution")
-    ax.legend()
+    ax.legend(fontsize=10)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=170)
     plt.close(fig)
 
 
@@ -128,8 +129,13 @@ def plot_roc_pr_curves(
     pr_out_path: Path,
 ) -> None:
     y_true_bin = _one_hot_labels(y_true, len(class_names))
+    n = len(class_names)
+    # The legend has one entry per class, so with many labels it needs to
+    # live outside the axes (not just a bigger fontsize) or it swallows the
+    # curves themselves - widen the figure to leave it room to do that.
+    figsize = (8.5 + 0.18 * n, 6.5)
 
-    fig, ax = plt.subplots(figsize=(6, 5.5))
+    fig, ax = plt.subplots(figsize=figsize)
     for i, name in enumerate(class_names):
         fpr, tpr, _ = roc_curve(y_true_bin[:, i], probs[:, i])
         ax.plot(fpr, tpr, label=f"{name} (AUC={auc(fpr, tpr):.3f})")
@@ -137,12 +143,11 @@ def plot_roc_pr_curves(
     ax.set_xlabel("False positive rate")
     ax.set_ylabel("True positive rate")
     ax.set_title("ROC curves (one-vs-rest, validation set)")
-    ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(roc_out_path, dpi=150)
+    ax.legend(fontsize=9, bbox_to_anchor=(1.02, 1), loc="upper left")
+    fig.savefig(roc_out_path, dpi=170, bbox_inches="tight")
     plt.close(fig)
 
-    fig, ax = plt.subplots(figsize=(6, 5.5))
+    fig, ax = plt.subplots(figsize=figsize)
     for i, name in enumerate(class_names):
         precision, recall, _ = precision_recall_curve(y_true_bin[:, i], probs[:, i])
         ap = average_precision_score(y_true_bin[:, i], probs[:, i])
@@ -150,15 +155,18 @@ def plot_roc_pr_curves(
     ax.set_xlabel("Recall")
     ax.set_ylabel("Precision")
     ax.set_title("Precision-recall curves (one-vs-rest, validation set)")
-    ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(pr_out_path, dpi=150)
+    ax.legend(fontsize=9, bbox_to_anchor=(1.02, 1), loc="upper left")
+    fig.savefig(pr_out_path, dpi=170, bbox_inches="tight")
     plt.close(fig)
 
 
 def compute_umap(embeddings: np.ndarray, seed: int = 0) -> np.ndarray:
     reducer = umap.UMAP(random_state=seed)
     return reducer.fit_transform(embeddings)
+
+
+def _slugify(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
 
 def plot_umap_scatter(
@@ -305,6 +313,7 @@ def generate_run_plots(
     train_celltype_labels: np.ndarray,
     valid_celltype_labels: np.ndarray,
     valid_batch_labels: np.ndarray,
+    metadata_fields: Dict[str, np.ndarray],
     predictions: np.ndarray,
     probs: np.ndarray,
     base_cell_emb: np.ndarray,
@@ -312,7 +321,14 @@ def generate_run_plots(
 ) -> List[Dict[str, str]]:
     """Render all diagnostic plots for one run into save_dir/plots/ and return
     (and persist as plots/manifest.json) the list describing them, so the
-    webapp doesn't need to guess titles/grouping from filenames."""
+    webapp doesn't need to guess titles/grouping from filenames.
+
+    metadata_fields maps every categorical/string obs column (e.g. the
+    trained-on label and batch columns, plus anything else in the dataset's
+    metadata) to its values for the validation cells, aligned with
+    base_cell_emb/finetuned_cell_emb - one UMAP is rendered per field per
+    embedding stage.
+    """
     plots_dir = save_dir / "plots"
     plots_dir.mkdir(exist_ok=True)
     class_names = [id2type[i] for i in range(len(id2type))]
@@ -354,34 +370,27 @@ def generate_run_plots(
     pred_names = [class_names[i] for i in predictions]
 
     base_coords = compute_umap(base_cell_emb)
-    plot_umap_scatter(
-        base_coords,
-        true_names,
-        plots_dir / "umap_base_by_label.png",
-        "Base (pre-finetuning) embeddings — colored by true label",
-    )
-    add("umap_base_by_label.png", "Base model UMAP, colored by true label", "Embeddings")
-
-    plot_umap_scatter(
-        base_coords,
-        valid_batch_labels,
-        plots_dir / "umap_base_by_batch.png",
-        "Base (pre-finetuning) embeddings — colored by batch",
-    )
-    add("umap_base_by_batch.png", "Base model UMAP, colored by batch", "Embeddings")
-
     finetuned_coords = compute_umap(finetuned_cell_emb)
-    plot_umap_scatter(
-        finetuned_coords,
-        true_names,
-        plots_dir / "umap_finetuned_by_label.png",
-        "Finetuned embeddings — colored by true label",
-    )
-    add(
-        "umap_finetuned_by_label.png",
-        "Finetuned model UMAP, colored by true label",
-        "Embeddings",
-    )
+
+    # One UMAP per categorical/string metadata field, per embedding stage -
+    # covers the trained-on label/batch columns plus every other field the
+    # dataset happens to carry, so they're all on hand later without rerunning
+    # the model.
+    stages = [
+        ("base", "Base (pre-finetuning)", base_coords, "Initial Model Embeddings"),
+        ("finetuned", "Finetuned", finetuned_coords, "Finetuned Embeddings"),
+    ]
+    for stage_key, stage_label, coords, section in stages:
+        for field_name, values in metadata_fields.items():
+            field_slug = _slugify(field_name)
+            filename = f"umap_{stage_key}_by_{field_slug}.png"
+            plot_umap_scatter(
+                coords,
+                values,
+                plots_dir / filename,
+                f"{stage_label} embeddings — colored by {field_name}",
+            )
+            add(filename, f"{stage_label} UMAP, colored by {field_name}", section)
 
     plot_umap_scatter(
         finetuned_coords,
@@ -392,16 +401,8 @@ def generate_run_plots(
     add(
         "umap_finetuned_by_prediction.png",
         "Finetuned model UMAP, colored by predicted label",
-        "Embeddings",
+        "Finetuned Embeddings",
     )
-
-    plot_umap_scatter(
-        finetuned_coords,
-        valid_batch_labels,
-        plots_dir / "umap_finetuned_by_batch.png",
-        "Finetuned embeddings — colored by batch",
-    )
-    add("umap_finetuned_by_batch.png", "Finetuned model UMAP, colored by batch", "Embeddings")
 
     scib_scores = {
         "Base": compute_scib_scores(base_cell_emb, true_names, valid_batch_labels),
@@ -411,13 +412,13 @@ def generate_run_plots(
     add(
         "scib_scores.png",
         "scib integration metrics (base vs. finetuned)",
-        "Embeddings",
+        "Integration Metrics",
     )
     plot_pcr_scores(scib_scores, plots_dir / "scib_pcr.png")
     add(
         "scib_pcr.png",
         "scib PCR: batch-explained variance (base vs. finetuned)",
-        "Embeddings",
+        "Integration Metrics",
     )
     with open(plots_dir / "scib_metrics.json", "w") as f:
         json.dump(scib_scores, f, indent=2)

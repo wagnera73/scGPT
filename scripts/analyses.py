@@ -227,6 +227,7 @@ def run_finetune(config):
     batch_ids = np.array(adata.obs["batch_id"].tolist())
     str_batch_ids = np.array(adata.obs["str_batch"].tolist())
     num_batch_types = len(set(batch_ids))
+    cell_indices = np.arange(adata.n_obs)
 
     (
         train_data,
@@ -237,15 +238,32 @@ def run_finetune(config):
         valid_batch_labels,
         train_str_batch,
         valid_str_batch,
+        train_idx,
+        valid_idx,
     ) = train_test_split(
         all_counts,
         celltypes_labels,
         batch_ids,
         str_batch_ids,
+        cell_indices,
         test_size=0.1,
         shuffle=True,
         stratify=celltypes_labels if config.balance_classes else None,
     )
+
+    # Every categorical/string obs column (not just "celltype" and
+    # "str_batch") gets its own UMAP later on, so later analyses have all of
+    # them on hand rather than just the two the run happens to train on.
+    # Columns that are unique per cell (e.g. a barcode) aren't meaningful as
+    # a coloring and are skipped.
+    metadata_columns = [
+        c
+        for c in adata.obs.select_dtypes(include=["category", "object", "bool"]).columns
+        if adata.obs[c].nunique(dropna=True) < adata.n_obs
+    ]
+    metadata_fields = {
+        c: adata.obs[c].astype(str).to_numpy()[valid_idx] for c in metadata_columns
+    }
 
     gene_ids = np.array(vocab(genes), dtype=int)
 
@@ -556,6 +574,7 @@ def run_finetune(config):
             train_celltype_labels=train_celltype_labels,
             valid_celltype_labels=valid_labels,
             valid_batch_labels=valid_str_batch,
+            metadata_fields=metadata_fields,
             predictions=predictions,
             probs=final_eval["probs"],
             base_cell_emb=base_eval["cell_emb"],

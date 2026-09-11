@@ -35,7 +35,7 @@ code { background: var(--bg-card); padding: 0.1em 0.4em; border-radius: 4px; fon
 }
 .topbar .brand { font-weight: 700; font-size: 1.1em; color: var(--text); }
 
-main { max-width: 1600px; margin: 0 auto; padding: 28px; }
+main { max-width: none; margin: 0 auto; padding: 28px; }
 
 .page-header { margin-bottom: 20px; }
 .page-header h1 { margin: 0 0 6px; font-size: 1.6em; }
@@ -74,6 +74,7 @@ select, .btn, button {
 
 .runs-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -84,6 +85,9 @@ select, .btn, button {
   padding: 9px 12px;
   text-align: left;
   border-bottom: 1px solid var(--border);
+  overflow-wrap: break-word;
+}
+.runs-table td:last-child, .runs-table th:last-child {
   white-space: nowrap;
 }
 .runs-table th { color: var(--text-muted); font-weight: 600; font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.03em; }
@@ -143,6 +147,9 @@ dd { margin: 0; }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
+}
+.plot-gallery--wide {
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
 }
 .plot-gallery figure {
   margin: 0;

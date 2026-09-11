@@ -64,7 +64,7 @@
 {% for section, plots in plot_sections.items() %}
 <div class="card">
   <h3>{{ section }}</h3>
-  <div class="plot-gallery">
+  <div class="plot-gallery{% if section == 'Classification' %} plot-gallery--wide{% endif %}">
     {% for p in plots %}
     <figure>
       <a href="/run/{{ run.run_id }}/plots/{{ p.filename }}" target="_blank">
